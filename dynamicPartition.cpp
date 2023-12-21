@@ -13,13 +13,22 @@ enum OPERATE
     allocate = 1, // 分配内存
     release       // 释放内存
 };
-typedef struct memoryPartition
+typedef struct memoryPartition//用于存放所有分区信息
 {
     int begin;     // 开始地址
     int space;     // 大小
     int processID; // 进程id
 } memoryPartition;
-vector<memoryPartition> globeMemoryStatus;
+typedef struct memoryPartition_sort//用于排序空闲分区
+{
+    int begin;     // 开始地址
+    int space;     // 大小
+    int idx;       // 在全局分区情况中的位置
+} memoryPartition_sort;
+vector<memoryPartition> globeMemoryStatus;//所有分区信息
+vector<memoryPartition_sort> firstFree; // 最先适应空闲分区
+vector<memoryPartition_sort> bestFree;  // 最佳适应空闲分区
+vector<memoryPartition_sort> worstFree; // 最坏适应空闲分区
 
 // 释放内存
 void releaseMemory(int proID)
@@ -105,6 +114,100 @@ void allocateMemory(int idx, int proID, int size)
         idx--;
     }
 }
+
+// 排序算法
+void sortBeforeChoose(METHOD m, vector<memoryPartition_sort> &globeFree)
+{
+    vector<memoryPartition_sort> temp;
+    for (int i = 0; i < globeMemoryStatus.size(); i++)
+    {
+        if (globeMemoryStatus[i].processID == -1)
+        {
+            memoryPartition_sort t;
+            t.begin = globeMemoryStatus[i].begin;
+            t.space = globeMemoryStatus[i].space;
+            t.idx = i;
+            temp.push_back(t);
+        }
+    }
+    for (int i = 0; i < temp.size(); i++)
+    {
+        for (int j = i; j < temp.size(); j++)
+        {
+            int compare1, compare2;
+            if (m == FF)
+            {
+                compare1 = temp[i].begin;
+                compare2 = temp[j].begin;
+            }
+            else
+            {
+                compare1 = temp[i].space;
+                compare2 = temp[j].space;
+            }
+            if (m == WF)
+            {
+                if (compare1 < compare2) // 大分区在前
+                {
+                    memoryPartition_sort t = temp[i];
+                    temp[i] = temp[j];
+                    temp[j] = temp[i];
+                }
+            }
+            else
+            {
+                if (compare1 > compare2) // 小分区/小地址在前
+                {
+                    memoryPartition_sort t = temp[i];
+                    temp[i] = temp[j];
+                    temp[j] = temp[i];
+                }
+            }
+        }
+    }
+    globeFree = temp;
+}
+
+// 最先适应法/排序版！
+bool firstFit_sort(int proID, int size)
+{
+    sortBeforeChoose(FF, firstFree);
+    for (int i = 0; i < firstFree.size(); i++)
+    {
+        if (firstFree[i].space >= size)
+        {
+            allocateMemory(firstFree[i].idx, proID, size);
+            return true;
+        }
+    }
+    return false;
+}
+// 最佳适应法/排序版！
+bool bestFit_sort(int proID, int size)
+{
+    sortBeforeChoose(BF, bestFree);
+    for (int i = 0; i < firstFree.size(); i++)
+    {
+        if (bestFree[i].space >= size)
+        {
+            allocateMemory(firstFree[i].idx, proID, size);
+            return true;
+        }
+    }
+    return false;
+}
+// 最坏适应法/排序版！
+bool worstFit_sort(int proID, int size)
+{
+    sortBeforeChoose(WF, worstFree);
+    if (worstFree[1].space >= size)
+    {
+        allocateMemory(1, proID, size);
+        return true;
+    }
+    return false;
+}
+
 // 最先适应法
 bool firstFit(int proID, int size)
 {
@@ -124,6 +227,7 @@ bool firstFit(int proID, int size)
         allocateMemory(fitIdx, proID, size);
         return true;
     }
+
     return false;
 }
 // 最佳适应法
@@ -221,6 +325,7 @@ void userChoose(int memory, int processNum, bool (*func)(int, int))
             else
             {
                 cout << "分配失败" << endl;
+                // exit(0);//一旦分配失败整个程序退出
             }
             break;
         case release:
